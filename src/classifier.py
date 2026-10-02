@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -101,6 +102,39 @@ def _check_urgent_keywords(thread: EmailThread, directrices: dict) -> bool:
     return any(keyword.lower() in text for keyword in directrices.get("disparadores_urgencia", []))
 
 
+def _parse_json_response(raw_text: str) -> Optional[dict]:
+    """
+    Intenta interpretar la respuesta del modelo como JSON, tolerando que
+    venga envuelta en un bloque de markdown (```json ... ``` o ``` ... ```)
+    o con texto extra alrededor — algo común en los modelos de lenguaje
+    aunque el system prompt pida responder ÚNICAMENTE con JSON.
+
+    Prueba, en orden: el texto tal cual, el contenido dentro de un bloque
+    de markdown si existe, y el primer bloque {...} que se pueda extraer
+    con una expresión regular. Devuelve None solo si ninguno de esos
+    intentos produce JSON válido.
+    """
+    candidates = [raw_text]
+
+    fence_match = re.search(r"```(?:json)?\s*(.*?)```", raw_text, re.DOTALL)
+    if fence_match:
+        candidates.append(fence_match.group(1).strip())
+
+    brace_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+    if brace_match:
+        candidates.append(brace_match.group(0).strip())
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            return json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    return None
+
+
 def classify(thread: EmailThread, directrices: dict, client: anthropic.Anthropic) -> Classification:
     prefiltered = _rule_based_prefilter(thread, directrices)
     if prefiltered:
@@ -126,11 +160,11 @@ def classify(thread: EmailThread, directrices: dict, client: anthropic.Anthropic
     )
 
     raw_text = response.content[0].text.strip()
-    try:
-        data = json.loads(raw_text)
-    except json.JSONDecodeError:
-        # Si el modelo no devolvió JSON limpio, se marca para revisión manual
-        # en vez de arriesgar una mala clasificación silenciosa.
+    data = _parse_json_response(raw_text)
+    if data is None:
+        # Si el modelo no devolvió JSON interpretable de ninguna forma, se
+        # marca para revisión manual en vez de arriesgar una mala
+        # clasificación silenciosa.
         return Classification(
             categoria="C",
             urgente=True,
