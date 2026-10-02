@@ -25,7 +25,7 @@ import anthropic
 
 from gmail_client import EmailThread
 
-MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5")
+MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
 SYSTEM_PROMPT = """Eres el motor de clasificación de "Email Admon", un bot de \
 administración de correo para Trueline Trucking. Tu única tarea es clasificar \
