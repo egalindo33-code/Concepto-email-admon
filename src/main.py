@@ -95,10 +95,12 @@ def run() -> None:
         if result.urgente:
             gmail_client.apply_label(service, thread_id, label_ids["urgente"])
             notify.send_urgent_alert(
+                service,
                 destinatario=directrices["notificacion_urgente"]["destinatario"],
                 asunto_original=thread.subject,
                 remitente_original=thread.sender,
                 razon=result.razonamiento,
+                remitente_alerta=directrices["cuenta_monitoreada"],
             )
 
         if result.categoria == "A1":

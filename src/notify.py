@@ -1,32 +1,30 @@
 """
 notify.py
 
-Notificación de urgencias. Implementación simple por correo (SMTP) usando
-una cuenta de Gmail con contraseña de aplicación. Pensado para reemplazarse
-después por push/SMS (ej. Twilio) si se quiere algo que llegue al teléfono
-sin depender de revisar el correo.
+Notificación de urgencias. Se manda usando la misma conexión de Gmail (API)
+que el bot ya tiene autorizada para leer/responder correos — no SMTP, no
+contraseña de aplicación. Esto evita el problema de cuentas de Google
+Workspace que tienen las "contraseñas de aplicación" deshabilitadas por el
+administrador del dominio (común en organizaciones).
 """
 
 from __future__ import annotations
 
 import os
-import smtplib
-from email.mime.text import MIMEText
+
+import gmail_client
 
 
-def send_urgent_alert(destinatario: str, asunto_original: str, remitente_original: str, razon: str) -> None:
+def send_urgent_alert(
+    service,
+    destinatario: str,
+    asunto_original: str,
+    remitente_original: str,
+    razon: str,
+    remitente_alerta: str,
+) -> None:
     canal = os.environ.get("NOTIFY_CHANNEL", "email")
     if canal == "ninguno":
-        return
-
-    smtp_user = os.environ.get("NOTIFY_SMTP_USER")
-    smtp_pass = os.environ.get("NOTIFY_SMTP_APP_PASSWORD")
-    if not smtp_user or not smtp_pass:
-        print(
-            "[AVISO] Falta configurar NOTIFY_SMTP_USER / NOTIFY_SMTP_APP_PASSWORD "
-            "en .env — no se pudo enviar la alerta urgente por correo. "
-            f"Correo urgente detectado de todas formas: '{asunto_original}' de {remitente_original}."
-        )
         return
 
     body = (
@@ -36,11 +34,17 @@ def send_urgent_alert(destinatario: str, asunto_original: str, remitente_origina
         f"Motivo: {razon}\n\n"
         f"Revisa tu bandeja de egalindo@truelinetllc.com lo antes posible."
     )
-    message = MIMEText(body)
-    message["Subject"] = f"[URGENTE] Email Admon: {asunto_original}"
-    message["From"] = smtp_user
-    message["To"] = destinatario
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, [destinatario], message.as_string())
+    try:
+        gmail_client.send_plain_message(
+            service,
+            to_address=destinatario,
+            from_address=remitente_alerta,
+            subject=f"[URGENTE] Email Admon: {asunto_original}",
+            body=body,
+        )
+    except Exception as exc:  # noqa: BLE001 - nunca debe tumbar la corrida principal
+        print(
+            f"[AVISO] No se pudo enviar la alerta urgente por correo ({exc}). "
+            f"Correo urgente detectado de todas formas: '{asunto_original}' de {remitente_original}."
+        )

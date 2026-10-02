@@ -230,6 +230,23 @@ def create_draft_reply(service, thread: EmailThread, subject: str, body: str) ->
     ).execute()
 
 
+def send_plain_message(service, to_address: str, from_address: str, subject: str, body: str) -> dict:
+    """Envía un mensaje nuevo (no respuesta a un hilo existente) vía la API de
+    Gmail. Se usa para notificaciones internas (ej. alerta de correo urgente)
+    reutilizando la misma conexión ya autorizada del bot — sin SMTP ni
+    contraseña de aplicación."""
+    message = MIMEText(body)
+    message["to"] = to_address
+    message["from"] = from_address
+    message["subject"] = subject
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+    return service.users().messages().send(
+        userId="me",
+        body={"raw": raw},
+    ).execute()
+
+
 def send_reply(service, thread: EmailThread, subject: str, body: str) -> dict:
     """Envía directo (sin borrador) — solo debe usarse para categoría B
     cuando categoria_b_auto_envio_activa esté en true en las directrices."""
