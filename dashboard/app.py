@@ -37,6 +37,18 @@ LOG_KEY = "email_admon:log"
 PENDING_HASH = "email_admon:pending_since"
 ALERTED_SET = "email_admon:sla_alertado"
 
+# Cuenta de Gmail monitoreada (para armar links directos al hilo). Si en algún
+# momento monitoreas otra cuenta, cambia esto o pásalo por variable de entorno.
+GMAIL_ACCOUNT = os.environ.get("GMAIL_ACCOUNT", "egalindo@truelinetllc.com")
+
+
+def _gmail_link(thread_id: str) -> str:
+    """Link directo al hilo en Gmail (abre el hilo completo, con el borrador
+    adentro si existe). Un clic desde el panel te lleva directo a revisarlo."""
+    if not thread_id:
+        return "#"
+    return f"https://mail.google.com/mail/?authuser={GMAIL_ACCOUNT}#all/{thread_id}"
+
 CATEGORY_LABELS = {
     "A1": "A1 · basura eliminada",
     "A2": "A2 · spam de proveedor (sugerido)",
@@ -80,9 +92,13 @@ TEMPLATE = """
            white-space:nowrap; margin-top:2px; }
   .meta { font-size:12px; color:#6b7280; margin-top:2px; }
   .subj { font-weight:600; font-size:14px; line-height:1.3; }
+  .subj a { color:#111827; text-decoration:none; }
+  .subj a:hover { text-decoration:underline; color:#2563eb; }
   .empty { color:#9ca3af; font-size:13px; padding: 4px 0 10px 0; }
   .pill { font-size:12px; color:#374151; }
   .refresh { font-size:12px; color:#6b7280; text-decoration:none; }
+  .open { font-size:11px; color:#2563eb; text-decoration:none; white-space:nowrap; margin-top:3px; }
+  .open:hover { text-decoration:underline; }
 </style>
 </head>
 <body>
@@ -105,9 +121,10 @@ TEMPLATE = """
       {% for p in pending %}
       <div class="row">
         <div style="flex:1">
-          <div class="subj">{{ p.subject }}</div>
+          <div class="subj"><a href="{{ p.link }}" target="_blank" rel="noopener">{{ p.subject }}</a></div>
           <div class="meta">{{ p.sender }} · esperando hace {{ p.horas }} h{{ ' · ya se mandó aviso de seguimiento' if p.alertado else '' }}</div>
         </div>
+        <a class="open" href="{{ p.link }}" target="_blank" rel="noopener">abrir ↗</a>
       </div>
       {% endfor %}
     {% else %}
@@ -122,9 +139,10 @@ TEMPLATE = """
       <div class="row">
         <span class="badge" style="background:#dc2626">URGENTE</span>
         <div style="flex:1">
-          <div class="subj">{{ e.asunto }}</div>
+          <div class="subj"><a href="{{ e.link }}" target="_blank" rel="noopener">{{ e.asunto }}</a></div>
           <div class="meta">{{ e.remitente }} · {{ e.timestamp }}</div>
         </div>
+        <a class="open" href="{{ e.link }}" target="_blank" rel="noopener">abrir ↗</a>
       </div>
       {% endfor %}
     {% else %}
@@ -138,9 +156,10 @@ TEMPLATE = """
     <div class="row">
       <span class="badge" style="background:{{ e.color }}">{{ e.categoria }}</span>
       <div style="flex:1">
-        <div class="subj">{{ e.asunto }}</div>
+        <div class="subj"><a href="{{ e.link }}" target="_blank" rel="noopener">{{ e.asunto }}</a></div>
         <div class="meta">{{ e.remitente }} · {{ e.accion }} · {{ e.timestamp }}</div>
       </div>
+      <a class="open" href="{{ e.link }}" target="_blank" rel="noopener">abrir ↗</a>
     </div>
     {% endfor %}
     {% if not recientes %}
@@ -225,6 +244,7 @@ def index():
 
     for e in entries:
         e["color"] = CATEGORY_COLORS.get(e.get("categoria"), "#9ca3af")
+        e["link"] = _gmail_link(e.get("thread_id"))
 
     pending = []
     if client is not None:
@@ -245,6 +265,7 @@ def index():
                     "sender": data.get("sender", ""),
                     "horas": horas,
                     "alertado": thread_id in alertados,
+                    "link": _gmail_link(thread_id),
                 })
             except (ValueError, KeyError, json.JSONDecodeError):
                 continue

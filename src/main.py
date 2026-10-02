@@ -82,6 +82,28 @@ def run() -> None:
         "borrador_pendiente": gmail_client.get_or_create_label(service, LABEL_BORRADOR_PENDIENTE),
     }
 
+    # --- Backfill: hilos que YA tenían el borrador pendiente antes de que
+    # existiera este rastreo (p. ej. corridas previas a configurar REDIS_URL,
+    # o cualquier otro hueco). Sin esto, el panel y el SLA solo verían lo
+    # nuevo desde hoy y dejarían fuera lo que ya estaba esperando revisión. ---
+    if redis_client is not None:
+        try:
+            ya_rastreados = set(redis_client.hkeys(store.PENDING_HASH))
+        except Exception:  # noqa: BLE001
+            ya_rastreados = set()
+
+        pendientes_actuales = gmail_client.list_candidate_threads(
+            service, query=f"label:{LABEL_BORRADOR_PENDIENTE}", max_results=100
+        )
+        for tid in pendientes_actuales:
+            if tid in ya_rastreados:
+                continue
+            try:
+                hilo = gmail_client.get_thread_detail(service, tid, directrices["alias_disponibles"])
+                store.track_pending_draft(redis_client, tid, hilo.subject, hilo.sender)
+            except Exception:  # noqa: BLE001
+                continue
+
     # --- Seguimiento de borradores pendientes (SLA) ---
     # Si algo quedó esperando tu revisión por más de las horas configuradas
     # en directrices.yaml, manda un aviso de seguimiento (una sola vez).
