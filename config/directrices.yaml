@@ -1,0 +1,88 @@
+# Directrices vivas de Email Admon (CONCEPTO)
+#
+# Este archivo es el equivalente editable de "directrices-mail-admon.md".
+# Edítalo para ajustar el comportamiento del bot SIN tocar código.
+# El programa lo relee en cada corrida (no hay que reiniciar nada).
+
+cuenta_monitoreada: "egalindo@truelinetllc.com"
+
+# Alias configurados como "Send mail as" en Gmail (ya hecho manualmente en la cuenta).
+# El programa usa esta lista para saber con qué dirección puede enviar/responder.
+alias_disponibles:
+  - egalindo@truelinetllc.com
+  - dispatch@truelinetllc.com
+  - accounting@truelinetllc.com
+  - safety@truelinetllc.com
+  - support@truelinetllc.com
+  - RAlarcon@truelinetllc.com
+
+# Dominios/remitentes que NO tienen relación con el giro de transporte.
+# Si el remitente hace match aquí, se trata como A1 directo (eliminar + registrar)
+# sin necesidad de pasarlo por el modelo de lenguaje (ahorra costo).
+dominios_sin_relacion_transporte:
+  - learnworlds.com
+  - e.malwarebytes.com
+  - malwarebytes.com
+
+# Dominios/remitentes SÍ relacionados con el giro (proveedores, telemática, seguros, factoring, etc.)
+# aunque su correo sea no solicitado -> se trata como A2 (sugerir, no eliminar solo).
+dominios_relacionados_transporte:
+  - samsara.com
+  - mail.samsara.com
+  - email.samsara.com
+  - charlesmyersinsurance.com
+
+# Palabras/temas que SIEMPRE fuerzan categoría C (requiere borrador, nunca auto-envío),
+# sin importar qué tan "rutinario" parezca el resto del correo.
+disparadores_categoria_c:
+  - tarifa
+  - rate
+  - dinero
+  - pago
+  - payment
+  - fecha de entrega
+  - pickup
+  - delivery date
+  - compromiso
+  - agreement
+  - queja
+  - complaint
+  - dispute
+  - llamada
+  - schedule a call
+  - cita
+  - DOT
+  - inspection
+  - mantenimiento
+  - reemplazar
+
+# Palabras/señales que marcan un correo como URGENTE (requiere aviso inmediato,
+# además de su clasificación normal).
+disparadores_urgencia:
+  - accidente
+  - accident
+  - varado
+  - breakdown
+  - emergencia
+  - emergency
+  - urgente
+  - urgent
+  - asap
+  - amenaza
+  - legal action
+  - cited
+  - violation
+
+# Categoría B (auto-respuesta sin aprobación): apagada por default.
+# Actívala en true solo cuando ya hayas validado suficientes ciclos manuales.
+categoria_b_auto_envio_activa: false
+
+# Cuántos días conservar el log local de acciones (adicional a la papelera de Gmail,
+# que ya guarda los A1 eliminados por ~30 días).
+dias_retencion_log: 180
+
+# Canal de notificación para urgencias. "email" usa SMTP simple; "ninguno" solo
+# lo deja registrado en el log y en la etiqueta MailAdmon/Urgente.
+notificacion_urgente:
+  canal: "email"   # "email" | "ninguno"
+  destinatario: "egalindo33@gmail.com"
