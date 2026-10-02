@@ -48,3 +48,41 @@ def send_urgent_alert(
             f"[AVISO] No se pudo enviar la alerta urgente por correo ({exc}). "
             f"Correo urgente detectado de todas formas: '{asunto_original}' de {remitente_original}."
         )
+
+
+def send_followup_alert(
+    service,
+    destinatario: str,
+    asunto_original: str,
+    remitente_original: str,
+    horas: float,
+    remitente_alerta: str,
+) -> None:
+    """Aviso de seguimiento (SLA): un borrador quedó esperando tu revisión
+    por más tiempo del configurado en directrices.yaml. Se manda una sola vez
+    por hilo (lo controla store.py), no en cada corrida."""
+    canal = os.environ.get("NOTIFY_CHANNEL", "email")
+    if canal == "ninguno":
+        return
+
+    body = (
+        f"Tienes un borrador de Email Admon esperando tu revisión desde hace "
+        f"más de {horas:.0f} horas.\n\n"
+        f"De: {remitente_original}\n"
+        f"Asunto: {asunto_original}\n\n"
+        f"Revísalo en Gmail (etiqueta MailAdmon/BorradorPendiente) cuando puedas."
+    )
+
+    try:
+        gmail_client.send_plain_message(
+            service,
+            to_address=destinatario,
+            from_address=remitente_alerta,
+            subject=f"[SEGUIMIENTO] Email Admon: {asunto_original}",
+            body=body,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[AVISO] No se pudo enviar el aviso de seguimiento ({exc}). "
+            f"Borrador pendiente de todas formas: '{asunto_original}'."
+        )

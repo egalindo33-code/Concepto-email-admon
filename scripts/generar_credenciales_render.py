@@ -58,6 +58,8 @@ def main() -> None:
     print(f"GOOGLE_CLIENT_SECRET={creds.client_secret}")
     print(f"GOOGLE_REFRESH_TOKEN={creds.refresh_token}")
     print()
+    print("(Si ya tenías estas variables configuradas en Render de antes, solo")
+    print(" GOOGLE_REFRESH_TOKEN cambia normalmente — actualízalo igual.)")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ from dotenv import load_dotenv
 
 import gmail_client
 import notify
+import store
 from classifier import classify
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -71,6 +72,7 @@ def run() -> None:
     anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     service = gmail_client.get_service()
+    redis_client = store.get_client()
 
     label_ids = {
         "procesado": gmail_client.get_or_create_label(service, LABEL_PROCESADO),
@@ -80,15 +82,45 @@ def run() -> None:
         "borrador_pendiente": gmail_client.get_or_create_label(service, LABEL_BORRADOR_PENDIENTE),
     }
 
+    # --- Seguimiento de borradores pendientes (SLA) ---
+    # Si algo quedó esperando tu revisión por más de las horas configuradas
+    # en directrices.yaml, manda un aviso de seguimiento (una sola vez).
+    sla_horas = directrices.get("sla_horas_borrador_pendiente", 24)
+
+    def _sigue_pendiente(thread_id: str) -> bool:
+        return gmail_client.thread_has_label(service, thread_id, label_ids["borrador_pendiente"])
+
+    def _avisar_seguimiento(thread_id: str, subject: str, sender: str, horas: float) -> None:
+        notify.send_followup_alert(
+            service,
+            destinatario=directrices["notificacion_urgente"]["destinatario"],
+            asunto_original=subject,
+            remitente_original=sender,
+            horas=horas,
+            remitente_alerta=directrices["cuenta_monitoreada"],
+        )
+
+    store.check_sla(redis_client, _sigue_pendiente, sla_horas, _avisar_seguimiento)
+
     # Excluye lo ya procesado en corridas anteriores.
     query = f"in:inbox -label:{LABEL_PROCESADO}"
     thread_ids = gmail_client.list_candidate_threads(service, query=query, max_results=25)
 
     print(f"Email Admon: {len(thread_ids)} hilo(s) nuevo(s) por revisar.")
 
+    # Ejemplos de tono por alias, para que los borradores suenen más "tuyos"
+    # (se calcula una sola vez por alias por corrida, no por cada correo).
+    tono_por_alias: dict[str, list[str]] = {}
+
     for thread_id in thread_ids:
         thread = gmail_client.get_thread_detail(service, thread_id, directrices["alias_disponibles"])
-        result = classify(thread, directrices, anthropic_client)
+
+        if thread.original_account not in tono_por_alias:
+            tono_por_alias[thread.original_account] = gmail_client.get_recent_sent_samples(
+                service, thread.original_account
+            )
+
+        result = classify(thread, directrices, anthropic_client, estilo_previo=tono_por_alias[thread.original_account])
 
         action_taken = "sin_accion"
 
@@ -130,6 +162,7 @@ def run() -> None:
                         body=result.cuerpo_respuesta,
                     )
                     gmail_client.apply_label(service, thread_id, label_ids["borrador_pendiente"])
+                    store.track_pending_draft(redis_client, thread_id, thread.subject, thread.sender)
                 action_taken = "borrador_b_pendiente_activacion"
 
         elif result.categoria == "C":
@@ -140,13 +173,14 @@ def run() -> None:
                     body=result.cuerpo_respuesta,
                 )
                 gmail_client.apply_label(service, thread_id, label_ids["borrador_pendiente"])
+                store.track_pending_draft(redis_client, thread_id, thread.subject, thread.sender)
             action_taken = "borrador_c"
 
         # INFORMATIVO y cualquier otro caso: no se toca nada más.
 
         gmail_client.apply_label(service, thread_id, label_ids["procesado"])
 
-        log_action({
+        entry = {
             "thread_id": thread_id,
             "remitente": thread.sender,
             "asunto": thread.subject,
@@ -154,7 +188,9 @@ def run() -> None:
             "urgente": result.urgente,
             "razonamiento": result.razonamiento,
             "accion": action_taken,
-        })
+        }
+        log_action(entry)  # agrega "timestamp" a entry
+        store.push_log_entry(redis_client, entry)
 
         print(f"- [{result.categoria}{' URGENTE' if result.urgente else ''}] {thread.subject!r} -> {action_taken}")
 

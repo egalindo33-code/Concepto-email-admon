@@ -86,3 +86,10 @@ dias_retencion_log: 180
 notificacion_urgente:
   canal: "email"   # "email" | "ninguno"
   destinatario: "egalindo33@gmail.com"
+
+# Si un borrador (categoría C, o B mientras el auto-envío esté apagado) se
+# queda sin revisar por más de este número de horas, se manda un aviso de
+# seguimiento UNA sola vez (además de la alerta inmediata de "urgente", que
+# es para emergencias reales). Requiere REDIS_URL configurado; si no está,
+# este seguimiento simplemente no corre (el resto del bot sigue igual).
+sla_horas_borrador_pendiente: 24

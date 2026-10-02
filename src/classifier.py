@@ -54,8 +54,17 @@ REGLAS ADICIONALES:
 correo también parece prospección comercial.
 - Si el destinatario principal (To) no es la cuenta monitoreada y esta solo \
 va en copia (Cc), trátalo como INFORMATIVO salvo que sea urgente.
-- Marca "urgente": true si hay señales de accidente, unidad varada, \
-amenaza/disputa seria, o algo con plazo legal/de cumplimiento inmediato.
+- Marca "urgente": true SOLO si hay señales de una emergencia operativa real \
+de transporte: accidente, unidad o tráiler varado, amenaza/disputa seria con \
+cliente o bróker, o un plazo legal/DOT inminente (ej. una cita o inspección \
+ya programada para hoy/mañana).
+- NO marques "urgente" por notificaciones automáticas de administración de \
+cuentas: confirmaciones de alias de "send mail as", alertas de seguridad de \
+Google/Workspace (passkeys, verificación en dos pasos, inicio de sesión), \
+códigos de verificación, o avisos de proveedores de software. Esas son \
+rutinarias aunque el texto mencione "seguridad" o "verificar de inmediato" \
+— esa urgencia es sobre la cuenta de Google, no sobre la operación de \
+transporte.
 - Responde SIEMPRE en el mismo idioma en que está escrito el correo original.
 - Nunca inventes datos (fechas, montos, nombres) que no estén en el correo.
 
@@ -135,10 +144,25 @@ def _parse_json_response(raw_text: str) -> Optional[dict]:
     return None
 
 
-def classify(thread: EmailThread, directrices: dict, client: anthropic.Anthropic) -> Classification:
+def classify(
+    thread: EmailThread,
+    directrices: dict,
+    client: anthropic.Anthropic,
+    estilo_previo: Optional[list[str]] = None,
+) -> Classification:
     prefiltered = _rule_based_prefilter(thread, directrices)
     if prefiltered:
         return prefiltered
+
+    estilo_hint = ""
+    if estilo_previo:
+        ejemplos = "\n---\n".join(estilo_previo)
+        estilo_hint = (
+            f"\n\nEstilo de referencia (correos ya enviados antes desde esta "
+            f"misma cuenta — usa un tono/firma parecido si redactas un "
+            f"borrador o respuesta, pero nunca copies datos de estos "
+            f"ejemplos):\n{ejemplos}"
+        )
 
     user_content = (
         f"Remitente: {thread.sender}\n"
@@ -150,6 +174,7 @@ def classify(thread: EmailThread, directrices: dict, client: anthropic.Anthropic
         f"{', '.join(directrices.get('dominios_relacionados_transporte', []))}\n"
         f"Disparadores de categoría C ya conocidos: "
         f"{', '.join(directrices.get('disparadores_categoria_c', []))}"
+        f"{estilo_hint}"
     )
 
     response = client.messages.create(

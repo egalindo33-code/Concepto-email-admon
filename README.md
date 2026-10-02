@@ -150,9 +150,11 @@ directamente (conectando el conector de Render en la conversación). Pasos:
    - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` (del
      paso 2)
    - `ANTHROPIC_API_KEY` (de console.anthropic.com)
-   - `ANTHROPIC_MODEL` (ej. `claude-haiku-4-5`)
-   - `NOTIFY_CHANNEL`, `NOTIFY_SMTP_USER`, `NOTIFY_SMTP_APP_PASSWORD` (si
-     quieres alertas de urgencia por correo)
+   - `ANTHROPIC_MODEL` (ej. `claude-haiku-4-5-20251001`)
+   - `NOTIFY_CHANNEL` (`email` o `ninguno`) — la alerta de urgencia se manda
+     con la misma conexión de Gmail del bot, no requiere SMTP ni contraseña
+     de aplicación (útil en Google Workspace, donde el administrador suele
+     tenerlas deshabilitadas).
 5. **Dispara el primer deploy** y revisa los logs desde el dashboard de
    Render (o pídele a Claude que los revise con el conector).
 
@@ -161,10 +163,45 @@ efímero — no sobrevive entre corridas. `main.py` ya manda cada decisión
 también a stdout (`LOG_ACCION {...}`), así que el historial completo queda
 en los logs de Render, consultables en cualquier momento.
 
+## 7.1. Panel web (opcional) — ver el resumen sin entrar a Gmail ni a Render
+
+Agregado el 2026-10-02. Es una páginita de solo lectura que muestra lo que
+el bot procesó, qué quedó pendiente de tu revisión y las urgencias
+recientes — para consultarla desde cualquier computadora o celular, sin
+pedírselo a Claude y sin entrar al dashboard de Render.
+
+Son dos piezas nuevas en Render (ambas caben en el plan gratis):
+
+1. **Key Value (Redis)**: el almacenamiento donde el bot escribe su
+   actividad reciente. Dale la variable `REDIS_URL` resultante tanto al
+   cron job (`crn-davk8o49v7es7384p370`) como al servicio del panel.
+2. **Web Service** apuntando a `dashboard/app.py` de este mismo
+   repositorio:
+   - Build command: `pip install -r dashboard/requirements.txt`
+   - Start command: `cd dashboard && gunicorn app:app --bind 0.0.0.0:$PORT`
+   - Variables de entorno: `REDIS_URL` (la misma del paso 1), y
+     opcionalmente `DASHBOARD_USER` / `DASHBOARD_PASS` si quieres que la
+     página pida usuario y contraseña (recomendado si vas a compartir el
+     link o si contiene información que prefieres no dejar abierta a quien
+     tenga la URL).
+
+El plan gratis de Render "duerme" el servicio tras un rato sin visitas —
+la primera vez que abres el panel después de un rato puede tardar unos
+30-40 segundos en cargar mientras despierta. Si eso te molesta, se puede
+subir a un plan de pago barato (~$7 USD/mes) para que esté siempre
+despierto.
+
+También agregado el mismo día: un seguimiento de "borrador pendiente"
+(`sla_horas_borrador_pendiente` en `config/directrices.yaml`, 24 horas por
+default) que manda un único aviso de seguimiento si dejaste un borrador sin
+revisar por más de ese tiempo; y que los borradores ahora usan como
+referencia el tono de tus correos ya enviados desde ese mismo alias, para
+sonar más parecidos a como tú escribes.
+
 ## 8. Costos esperados (aproximados)
 
 - **Gmail API:** sin costo al volumen de uso de una sola cuenta de correo.
-- **API de Anthropic:** con `claude-haiku-4-5` (configurado por default),
+- **API de Anthropic:** con `claude-haiku-4-5-20251001` (configurado por default),
   aproximadamente $1 por millón de tokens de entrada y $5 por millón de
   salida. Procesar un correo típico (leer + clasificar + redactar un
   borrador) usa aproximadamente 1,000–3,000 tokens — para el volumen de
@@ -188,13 +225,17 @@ email_admon/
 ├── config/
 │   └── directrices.yaml      # reglas de negocio editables (sin tocar código)
 ├── credentials/               # client_secret.json y token.json van aquí (no incluidos)
+├── dashboard/
+│   ├── app.py                  # panel web de solo lectura (ver sección 7.1)
+│   └── requirements.txt
 ├── log/                        # se genera solo: acciones.jsonl, run.log
 ├── scripts/
 │   └── generar_credenciales_render.py  # genera credenciales headless (una vez, local)
 ├── src/
 │   ├── gmail_client.py        # todo lo que toca la API de Gmail
 │   ├── classifier.py          # clasificación + redacción vía API de Anthropic
-│   ├── notify.py               # alerta de correos urgentes
+│   ├── notify.py               # alerta de correos urgentes y de seguimiento (SLA)
+│   ├── store.py                 # almacenamiento del panel + seguimiento de SLA (Redis)
 │   └── main.py                  # orquestador, punto de entrada
 ├── .env.example
 ├── .gitignore

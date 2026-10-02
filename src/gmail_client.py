@@ -211,6 +211,23 @@ def trash_thread(service, thread_id: str) -> None:
     service.users().threads().trash(userId="me", id=thread_id).execute()
 
 
+def thread_has_label(service, thread_id: str, label_id: str) -> bool:
+    """Revisa si un hilo TODAVÍA tiene la etiqueta dada (ej. para saber si un
+    borrador pendiente sigue sin resolverse). Si el hilo ya no existe o hubo
+    un error de API, se asume que ya no está pendiente (False) para no
+    mandar avisos de seguimiento sobre algo que ya no se puede verificar."""
+    try:
+        thread = service.users().threads().get(
+            userId="me", id=thread_id, format="minimal"
+        ).execute()
+        labels_on_thread: set[str] = set()
+        for message in thread.get("messages", []):
+            labels_on_thread.update(message.get("labelIds", []))
+        return label_id in labels_on_thread
+    except HttpError:
+        return False
+
+
 def _extract_email_address(from_header: str) -> str:
     match = re.search(r"<([^>]+)>", from_header)
     return match.group(1) if match else from_header.strip()
@@ -228,6 +245,31 @@ def create_draft_reply(service, thread: EmailThread, subject: str, body: str) ->
         userId="me",
         body={"message": {"raw": raw, "threadId": thread.thread_id}},
     ).execute()
+
+
+def get_recent_sent_samples(service, alias: str, limit: int = 2) -> list[str]:
+    """Trae los últimos correos enviados desde un alias (recortados), para
+    usarlos como referencia de tono al redactar un borrador — así suena más
+    parecido a como tú escribes normalmente, en vez de un texto genérico.
+    Si algo falla (alias nuevo sin historial, error de API), simplemente
+    devuelve una lista vacía y el bot sigue funcionando sin esa referencia.
+    """
+    try:
+        result = service.users().messages().list(
+            userId="me", q=f"in:sent from:{alias}", maxResults=limit
+        ).execute()
+
+        samples = []
+        for msg_ref in result.get("messages", []):
+            msg = service.users().messages().get(
+                userId="me", id=msg_ref["id"], format="full"
+            ).execute()
+            text = _extract_plaintext(msg["payload"]).strip()
+            if text:
+                samples.append(text[:500])
+        return samples
+    except HttpError:
+        return []
 
 
 def send_plain_message(service, to_address: str, from_address: str, subject: str, body: str) -> dict:
