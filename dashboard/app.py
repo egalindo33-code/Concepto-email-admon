@@ -104,7 +104,7 @@ TEMPLATE = """
 <body>
 <div class="wrap">
   <h1>📬 Email Admon</h1>
-  <div class="sub">Trueline Trucking · actualizado: {{ now }} · <a class="refresh" href="/">refrescar</a></div>
+  <div class="sub">Trueline Trucking · actualizado: {{ now }} · <a class="refresh" href="">refrescar</a></div>
 
   <div class="cards">
     {% for cat, n in counts.items() %}
@@ -192,21 +192,38 @@ def _get_client():
         return None
 
 
+def _portal_session_ok() -> bool:
+    """Solo se permite la entrada a través del portal privado de Prime Sign Group.
+
+    El portal (portal.primesigngroup.com/email/) verifica contraseña + código de 6 dígitos y
+    reenvía aquí su sesión firmada (Ed25519) en el encabezado X-PSG-Session. Se verifica con la
+    llave pública PSG_PORTAL_PUBLIC_KEY. Sin llave o sin firma válida, no hay acceso.
+    """
+    import base64, time
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        tok = request.headers.get("X-PSG-Session", "")
+        if not tok or len(tok) > 2048:
+            return False
+        payload, sig = tok.split(".")
+        b = lambda x: base64.urlsafe_b64decode(x + "=" * (-len(x) % 4))
+        key = Ed25519PublicKey.from_public_bytes(base64.b64decode(os.environ["PSG_PORTAL_PUBLIC_KEY"]))
+        key.verify(b(sig), payload.encode())
+        data = json.loads(b(payload))
+        now = time.time()
+        return data.get("v") == 1 and data.get("aud") == "psg-portal" and data.get("exp", 0) > now and data.get("iat", now + 999) <= now + 60
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _requires_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        expected_pass = os.environ.get("DASHBOARD_PASS")
-        if not expected_pass:
-            return f(*args, **kwargs)
-
-        expected_user = os.environ.get("DASHBOARD_USER", "admin")
-        auth = request.authorization
-        if not auth or auth.username != expected_user or auth.password != expected_pass:
-            return Response(
-                "Acceso restringido.", 401,
-                {"WWW-Authenticate": 'Basic realm="Email Admon"'},
-            )
-        return f(*args, **kwargs)
+        if not _portal_session_ok():
+            return Response("Acceso restringido. Entre por portal.primesigngroup.com", 403,
+                            {"Cache-Control": "no-store", "X-Robots-Tag": "noindex"})
+        resp = f(*args, **kwargs)
+        return resp
 
     return decorated
 
